@@ -9,9 +9,10 @@
 import Foundation
 
 nonisolated enum OAuthConfig {
-    /// 官方 OAuth Client（Cloudflare Dashboard → OAuth clients）。
-    /// 仅供官方构建使用；自编译请自建 Client 与回调中转，见 CONTRIBUTING.md。
-    static let clientID = "102240eb9095a1965ee11813ef4788cd"
+    /// Lu 自建的 OAuth Client（Cloudflare Dashboard → OAuth clients，
+    /// 私有 client，仅限本账号成员授权），配合自建回调中转 orange.698668.xyz。
+    /// PKCE 公开标识符，非机密。官方 client ID 与 o-c.do 中转不向第三方构建开放。
+    static let clientID = "20f62645e61eb23fe2c2cdba3c37362f"
 
     /// 自定义 scheme，供 Web 后端 302 跳回 App
     static let callbackScheme = "orangecloud"
@@ -20,7 +21,7 @@ nonisolated enum OAuthConfig {
 //    #if DEBUG
 //    static let redirectURI = "http://localhost:3000/oauth/callback"
 //    #else
-    static let redirectURI = "https://o-c.do/oauth/callback"
+    static let redirectURI = "https://orange.698668.xyz/oauth/callback"
 //    #endif
 
     // Cloudflare OAuth 端点
