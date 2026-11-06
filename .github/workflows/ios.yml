@@ -1,0 +1,82 @@
+# Orange Cloud unsigned IPA build (self-build, no signing).
+# Trigger: push to this file, or manual Run workflow.
+# Result: an unsigned .ipa attached to a GitHub Release on this fork
+# (public repo, so the asset link needs no login).
+# Notes:
+# - Xcode 26+ is required by the project; the job selects the newest
+#   Xcode 26 on the runner and fails loudly if none is installed.
+# - OPENSOURCE_UNLOCKED is the author-documented self-build flag that
+#   unlocks every Pro feature in your own build (see CONTRIBUTING.md).
+# - No signing: CODE_SIGNING_ALLOWED=NO. Install by re-signing with your
+#   own certificate (AltStore / Scarlet / TrollStore style sideloading).
+# - The official Cloudflare OAuth client ID and o-c.do callback relay are
+#   NOT for third-party builds: login will not work until OAuthConfig.swift
+#   is pointed at your own OAuth client + callback relay. See README.md
+#   "Building from source" and apps/web/README.md.
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ios.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode 26 found on this runner"
+            ls /Applications
+            exit 1
+          fi
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: List schemes and targets
+        run: |
+          xcodebuild -list -project "apps/ios/Orange Cloud/Orange Cloud.xcodeproj"
+
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild -project "apps/ios/Orange Cloud/Orange Cloud.xcodeproj" \
+            -scheme "Orange Cloud" \
+            -destination "generic/platform=iOS" \
+            -archivePath build/OrangeCloud.xcarchive \
+            -configuration Release \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) OPENSOURCE_UNLOCKED'
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH=$(ls -d build/OrangeCloud.xcarchive/Products/Applications/*.app | head -1)
+          echo "App: $APP_PATH"
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r -q OrangeCloud-unsigned.ipa Payload
+          ls -lh OrangeCloud-unsigned.ipa
+          unzip -l OrangeCloud-unsigned.ipa | head -20
+
+      - name: Create release and upload IPA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="unsigned-build-${{ github.run_number }}"
+          gh release create "$TAG" OrangeCloud-unsigned.ipa \
+            --title "Orange Cloud unsigned build #${{ github.run_number }}" \
+            --notes "Unsigned IPA built from ${{ github.sha }}. Re-sign with your own certificate to install. Login needs your own Cloudflare OAuth client + callback relay (see README Building from source)."
