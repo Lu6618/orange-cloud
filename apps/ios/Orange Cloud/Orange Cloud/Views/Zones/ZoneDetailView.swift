@@ -687,15 +687,21 @@ struct ZoneDetailView: View {
         } message: {
             Text("当前授权未包含此操作所需权限（\(deniedScopeHint)）。点「一键重授权」补齐，无需退出登录。")
         }
-        .alert("操作失败", isPresented: .init(
-            get: { actionsViewModel.error != nil },
-            set: { if !$0 { actionsViewModel.error = nil } }
-        )) {
+        .alert("操作失败", isPresented: errorAlertBinding) {
             apiErrorDocButton(for: actionsViewModel.error)
             Button("好", role: .cancel) {}
         } message: {
             Text(actionsViewModel.error ?? "")
         }
+    }
+
+    /// “操作失败” alert 的绑定：从 body 的巨型修饰链里抽出来，否则 Swift 编译器
+    /// （Xcode 26.6）无法在合理时间内完成类型检查，archive 会直接报错。
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { actionsViewModel.error != nil },
+            set: { if !$0 { actionsViewModel.error = nil } }
+        )
     }
 
     // MARK: - 暂停态与缓存同步
