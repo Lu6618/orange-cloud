@@ -97,450 +97,12 @@ struct ZoneDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 heroCard
-
-                // 分析：图表直接内嵌第一层级，置于管理之前
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("分析")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 4)
-                    if auth.hasScope("analytics.read") {
-                        ZoneAnalyticsSection(viewModel: analyticsViewModel)
-                        // 上方图表保持原数据集；明细与安全事件走 adaptive 数据集，范围跟随上方选择器
-                        ZoneTrafficDetailsSection(
-                            viewModel: trafficDetailsViewModel,
-                            range: analyticsViewModel.selectedRange
-                        )
-                        .padding(.top, 6)   // 与分析区内部卡片间距（14）对齐
-                    } else {
-                        Label("需要「流量分析」权限才能展示流量图表", systemImage: "lock")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 16)
-                            .glassIsland(cornerRadius: OCLayout.chipRadius)
-                    }
-                }
-
-                // 本卡内 eager 门控行的保留判据：目的页是叶子（内部只开 sheet、不再 push）。
-                // 「规则」「负载均衡」的目的页还要继续 push，已改值式（ZoneRoute + 栈根 navdest）；
-                // 其余若日后加内层 push，必须同步改值式。
-                sectionCard(String(localized: "管理")) {
-                    PermissionGatedNavigationLink(
-                        label: String(localized: "DNS 记录"),
-                        systemImage: "network",
-                        requiredScope: "dns.read",
-                        showsChevron: true
-                    ) {
-                        DNSListView(zoneId: zone.id, zoneName: zone.name, session: session)
-                    }
-                    .listRowStyleValue(String(localized: "\(dnsRecordDisplayCount) 条"))
-
-                    // zone 级 DNS 策略（DNSSEC / CNAME 展平 / NS 类型），与逐条记录分开
-                    PermissionGatedValueLink(
-                        label: String(localized: "DNS 设置"),
-                        systemImage: "gearshape.2",
-                        requiredScope: "zone-dns-settings.read",
-                        tint: .indigo,
-                        showsChevron: true,
-                        value: ZoneRoute.dnsSettings(zoneId: zone.id, zoneName: zone.name)
-                    )
-
-                    ProGatedNavigationLink(
-                        label: String(localized: "WAF 防火墙"),
-                        systemImage: "shield",
-                        requiredScope: "zone-waf.read",
-                        feature: .waf,
-                        tint: .purple,
-                        showsChevron: true
-                    ) {
-                        WAFRuleListView(zoneId: zone.id, zoneName: zone.name, session: session)
-                    }
-
-                    ProGatedNavigationLink(
-                        label: "Rate Limiting",
-                        systemImage: "gauge.with.dots.needle.bottom.50percent",
-                        requiredScope: "zone-waf.read",
-                        feature: .rateLimit,
-                        tint: .pink,
-                        showsChevron: true
-                    ) {
-                        RateLimitRulesView(zoneId: zone.id, zoneName: zone.name, session: session)
-                    }
-
-                    // 规则族（Transform / 缓存 / Snippets / 重定向 / 源站 / 配置 / 压缩 /
-                    // 自定义错误 / Page Rules / URL 规范化）统一收进「规则」二级入口
-                    PermissionGatedValueLink(
-                        label: String(localized: "规则"),
-                        systemImage: "list.bullet.rectangle",
-                        requiredScope: "zone.read",
-                        tint: .orange,
-                        showsChevron: true,
-                        value: ZoneRoute.rulesHub(zoneId: zone.id, zoneName: zone.name)
-                    )
-
-                    ProGatedNavigationLink(
-                        label: "Email Routing",
-                        systemImage: "envelope",
-                        requiredScope: "email-routing-rule.read",
-                        feature: .emailRouting,
-                        tint: .pink,
-                        showsChevron: true
-                    ) {
-                        EmailRoutingView(zoneId: zone.id, zoneName: zone.name, session: session)
-                    }
-
-                    PermissionGatedNavigationLink(
-                        label: "SSL/TLS",
-                        systemImage: "lock.shield",
-                        requiredScope: "zone-settings.read",
-                        tint: .green,
-                        showsChevron: true
-                    ) {
-                        ZoneSSLSettingsView(zoneId: zone.id, zoneName: zone.name, session: session)
-                    }
-
-                    PermissionGatedNavigationLink(
-                        label: String(localized: "性能与缓存"),
-                        systemImage: "speedometer",
-                        requiredScope: "zone-settings.read",
-                        tint: .teal,
-                        showsChevron: true
-                    ) {
-                        ZonePerformanceView(zoneId: zone.id, session: session)
-                    }
-
-                    PermissionGatedNavigationLink(
-                        label: String(localized: "SSL 证书"),
-                        systemImage: "checkmark.seal",
-                        requiredScope: "ssl-and-certificates.read",
-                        tint: .green,
-                        showsChevron: true
-                    ) {
-                        ZoneSSLCertsView(zoneId: zone.id, session: session)
-                    }
-
-                    PermissionGatedNavigationLink(
-                        label: String(localized: "IP 访问规则"),
-                        systemImage: "hand.raised",
-                        requiredScope: "firewall-services.read",
-                        tint: .red,
-                        showsChevron: true
-                    ) {
-                        ZoneAccessRulesView(zoneId: zone.id, session: session)
-                    }
-
-                    // 安全洞察（Security Center Insights）：全套餐免费，读写同 zone-settings.*；
-                    // 目的页是叶子（处理链接外跳浏览器，不再 push），eager 门控行即可
-                    PermissionGatedNavigationLink(
-                        label: String(localized: "安全洞察"),
-                        systemImage: "exclamationmark.shield",
-                        requiredScope: "zone-settings.read",
-                        tint: .red,
-                        showsChevron: true
-                    ) {
-                        SecurityInsightsView(zoneId: zone.id, zoneName: zone.name, session: session)
-                    }
-
-                    // 与负载均衡的监控器不同源：这里监控单个源站，单源站也能用
-                    PermissionGatedValueLink(
-                        label: String(localized: "健康检查"),
-                        systemImage: "waveform.path.ecg",
-                        requiredScope: "healthcheck.read",
-                        tint: .green,
-                        showsChevron: true,
-                        value: ZoneRoute.healthChecks(zoneId: zone.id, zoneName: zone.name)
-                    )
-
-                    ProGatedValueLink(
-                        label: String(localized: "负载均衡"),
-                        systemImage: "arrow.left.arrow.right",
-                        requiredScope: "load-balancers.read",
-                        feature: .loadBalancing,
-                        tint: .pink,
-                        showsChevron: true,
-                        value: ZoneRoute.loadBalancers(zoneId: zone.id, zoneName: zone.name)
-                    )
-                }
-
-                // 整卡仅在读到任一组配置时出现：
-                // 机器人管控全套餐可用但需 bot-management.read；
-                // 两个 zone setting 是 Pro 起，免费套餐读得到但不可改（editable == false）。
-                // 与其给用户一排永远打不开的锁，不如不显示。
-                if actionsViewModel.botConfigLoaded || actionsViewModel.aiSettingsAvailable {
-                    sectionCard(String(localized: "AI 内容控制")) {
-                        if actionsViewModel.botConfigLoaded {
-                            // 2026-09-15 起 ai_bots_protection 拆成三类：响应带任一新字段就换成三个选择行，
-                            // 否则保留旧的单选作回退
-                            if actionsViewModel.usesAICrawlerPolicies {
-                                aiCrawlerPolicyRows
-                            } else {
-                                settingPickerRow(
-                                    title: String(localized: "AI 爬虫"),
-                                    subtitle: String(localized: "抓取内容用于训练或问答的机器人"),
-                                    icon: "ant",
-                                    tint: .indigo,
-                                    options: AIBotsProtection.allCases,
-                                    selection: actionsViewModel.aiBotsProtection,
-                                    selectionLabel: actionsViewModel.aiBotsProtection.label,
-                                    optionLabel: \.label,
-                                    isBusy: actionsViewModel.isUpdatingBotConfig,
-                                    canEdit: canEditBots,
-                                    deniedScope: "bot-management.write",
-                                    requestChange: { mode in
-                                        Task { await actionsViewModel.setAIBotsProtection(mode) }
-                                    }
-                                )
-                            }
-
-                            settingToggleRow(
-                                title: String(localized: "链接迷宫"),
-                                subtitle: String(localized: "用无尽链接消耗违规爬虫"),
-                                icon: "arrow.triangle.turn.up.right.diamond",
-                                tint: .indigo,
-                                isOn: actionsViewModel.crawlerProtection,
-                                isBusy: actionsViewModel.isUpdatingBotConfig,
-                                canEdit: canEditBots,
-                                isLoaded: true,
-                                deniedScope: "bot-management.write",
-                                requestToggle: { on in
-                                    Task { await actionsViewModel.setCrawlerProtection(on) }
-                                }
-                            )
-
-                            settingToggleRow(
-                                title: String(localized: "拦截内容机器人"),
-                                subtitle: String(localized: "拦下低可信自动流量，已验证的机器人除外"),
-                                icon: "person.badge.shield.checkmark",
-                                tint: .indigo,
-                                isOn: actionsViewModel.contentBotsProtection,
-                                isBusy: actionsViewModel.isUpdatingBotConfig,
-                                canEdit: canEditBots,
-                                isLoaded: true,
-                                deniedScope: "bot-management.write",
-                                requestToggle: { on in
-                                    Task { await actionsViewModel.setContentBotsProtection(on) }
-                                }
-                            )
-
-                            // Bot Preference Sync 取代托管 robots.txt：响应带该字段才换，否则保留旧开关
-                            if let syncOn = actionsViewModel.botPreferenceSync {
-                                settingToggleRow(
-                                    title: String(localized: "按偏好生成 robots.txt"),
-                                    subtitle: String(localized: "根据以上三项，由 Cloudflare 生成 robots.txt 规则"),
-                                    icon: "list.bullet.rectangle",
-                                    tint: .teal,
-                                    isOn: syncOn,
-                                    isBusy: actionsViewModel.isUpdatingBotConfig,
-                                    canEdit: canEditBots,
-                                    isLoaded: true,
-                                    deniedScope: "bot-management.write",
-                                    requestToggle: { on in
-                                        Task { await actionsViewModel.setBotPreferenceSync(on) }
-                                    }
-                                )
-                            } else {
-                                settingToggleRow(
-                                    title: String(localized: "托管 robots.txt"),
-                                    subtitle: String(localized: "由 Cloudflare 维护，置于现有内容之前"),
-                                    icon: "list.bullet.rectangle",
-                                    tint: .teal,
-                                    isOn: actionsViewModel.managedRobotsTxt,
-                                    isBusy: actionsViewModel.isUpdatingBotConfig,
-                                    canEdit: canEditBots,
-                                    isLoaded: true,
-                                    deniedScope: "bot-management.write",
-                                    requestToggle: { on in
-                                        Task { await actionsViewModel.setManagedRobotsTxt(on) }
-                                    }
-                                )
-                            }
-
-                            settingToggleRow(
-                                title: String(localized: "内容使用声明"),
-                                subtitle: String(localized: "在 robots.txt 中声明内容的使用许可"),
-                                icon: "doc.badge.gearshape",
-                                tint: .teal,
-                                isOn: actionsViewModel.robotsLicense,
-                                isBusy: actionsViewModel.isUpdatingBotConfig,
-                                canEdit: canEditBots,
-                                isLoaded: true,
-                                deniedScope: "bot-management.write",
-                                requestToggle: { on in
-                                    Task { await actionsViewModel.setRobotsLicense(on) }
-                                }
-                            )
-                        }
-
-                        if actionsViewModel.aiTrainingRedirectAvailable {
-                            settingToggleRow(
-                                title: String(localized: "AI 训练重定向"),
-                                subtitle: String(localized: "把用于模型训练的爬虫引走"),
-                                icon: "arrow.triangle.branch",
-                                tint: .purple,
-                                isOn: actionsViewModel.aiTrainingRedirect,
-                                isBusy: actionsViewModel.isTogglingAITrainingRedirect,
-                                canEdit: canEditSettings,
-                                isLoaded: true,
-                                deniedScope: "zone-settings.write",
-                                requestToggle: { on in
-                                    Task { await actionsViewModel.setAITrainingRedirect(on) }
-                                }
-                            )
-                        }
-
-                        if actionsViewModel.markdownForAgentsAvailable {
-                            settingToggleRow(
-                                title: String(localized: "面向 Agent 的 Markdown"),
-                                subtitle: String(localized: "按请求把页面转成 Markdown 返回"),
-                                icon: "doc.plaintext",
-                                tint: .teal,
-                                isOn: actionsViewModel.markdownForAgents,
-                                isBusy: actionsViewModel.isTogglingMarkdownForAgents,
-                                canEdit: canEditSettings,
-                                isLoaded: true,
-                                deniedScope: "zone-settings.write",
-                                requestToggle: { on in
-                                    Task { await actionsViewModel.setMarkdownForAgents(on) }
-                                }
-                            )
-                        }
-                    }
-                }
-
-                sectionCard(String(localized: "操作")) {
-                    settingToggleRow(
-                        title: String(localized: "Under Attack 模式"),
-                        subtitle: String(localized: "对所有访客启用质询页"),
-                        icon: "shield.lefthalf.filled",
-                        tint: .red,
-                        isOn: actionsViewModel.underAttack,
-                        isBusy: actionsViewModel.isTogglingUnderAttack,
-                        canEdit: canEditSettings,
-                        isLoaded: actionsViewModel.settingsLoaded,
-                        deniedScope: canReadSettings ? "zone-settings.write" : "zone-settings.read",
-                        requestToggle: { on in pendingAction = .underAttack(on) }
-                    )
-
-                    precursorRow
-
-                    settingToggleRow(
-                        title: String(localized: "开发模式"),
-                        subtitle: String(localized: "临时绕过缓存（3 小时后自动关闭）"),
-                        icon: "hammer",
-                        tint: .blue,
-                        isOn: actionsViewModel.devMode,
-                        isBusy: actionsViewModel.isTogglingDevMode,
-                        canEdit: canEditSettings,
-                        isLoaded: actionsViewModel.settingsLoaded,
-                        deniedScope: canReadSettings ? "zone-settings.write" : "zone-settings.read",
-                        requestToggle: { on in pendingAction = .devMode(on) }
-                    )
-
-                    // 暂停态一直可读（zone.read 是登录基础权限），故 isLoaded 恒 true：
-                    // 无 zone.write 时行内显示当前开/关而非锁，符合「能看不能改」的一致语义。
-                    settingToggleRow(
-                        title: String(localized: "暂停 Cloudflare"),
-                        subtitle: String(localized: "流量绕过 Cloudflare，仅保留 DNS 解析"),
-                        icon: "pause.circle",
-                        tint: .gray,
-                        isOn: actionsViewModel.paused,
-                        isBusy: actionsViewModel.isTogglingPause,
-                        canEdit: canEditZone,
-                        isLoaded: true,
-                        deniedScope: "zone.write",
-                        requestToggle: { on in pendingAction = .pause(on) }
-                    )
-
-                    Button {
-                        if canPurge {
-                            showPurgeConfirm = true
-                        } else {
-                            deniedScopeHint = "cache.purge"
-                            showActionDenied = true
-                        }
-                    } label: {
-                        HStack(spacing: 12) {
-                            TintIcon(systemImage: "trash", color: .ocOrange)
-                            Text("清理全部缓存")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if actionsViewModel.isPurging {
-                                ProgressView()
-                            } else if !canPurge {
-                                Image(systemName: "lock.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                    .disabled(actionsViewModel.isPurging)
-
-                    // 标记过期（invalidate_cache，2026-09-28 GA）：与清除同权限（cache.purge）、同门槛（免费）
-                    Button {
-                        if canPurge {
-                            showInvalidateConfirm = true
-                        } else {
-                            deniedScopeHint = "cache.purge"
-                            showActionDenied = true
-                        }
-                    } label: {
-                        HStack(spacing: 12) {
-                            TintIcon(systemImage: "clock.arrow.circlepath", color: .ocOrange)
-                            Text("标记过期")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if !canPurge {
-                                Image(systemName: "lock.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                    .disabled(actionsViewModel.isPurging)
-
-                    Button {
-                        if canPurge {
-                            showPurgeSheet = true
-                        } else {
-                            deniedScopeHint = "cache.purge"
-                            showActionDenied = true
-                        }
-                    } label: {
-                        HStack(spacing: 12) {
-                            TintIcon(systemImage: "scissors", color: .ocOrange)
-                            Text("按目标清理缓存")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: canPurge ? "chevron.right" : "lock.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .disabled(actionsViewModel.isPurging)
-                }
-
-                if !zone.nameServers.isEmpty {
-                    sectionCard("Name Servers") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(zone.nameServers, id: \.self) { server in
-                                Text(server)
-                                    .font(.callout.monospaced())
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-
-                // Zone ID footer
-                Text("Zone ID · \(zone.id)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 8)
+                analyticsSection
+                manageSection
+                aiContentSection
+                actionsSection
+                nameServersSection
+                zoneIDFooter
             }
             .padding()
         }
@@ -702,6 +264,474 @@ struct ZoneDetailView: View {
             get: { actionsViewModel.error != nil },
             set: { if !$0 { actionsViewModel.error = nil } }
         )
+    }
+
+    /// 从 body 拆出的分段（body 表达式过大，Xcode 26.6 编译器类型检查超时）。
+    @ViewBuilder
+    private var analyticsSection: some View {
+                // 分析：图表直接内嵌第一层级，置于管理之前
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("分析")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 4)
+                    if auth.hasScope("analytics.read") {
+                        ZoneAnalyticsSection(viewModel: analyticsViewModel)
+                        // 上方图表保持原数据集；明细与安全事件走 adaptive 数据集，范围跟随上方选择器
+                        ZoneTrafficDetailsSection(
+                            viewModel: trafficDetailsViewModel,
+                            range: analyticsViewModel.selectedRange
+                        )
+                        .padding(.top, 6)   // 与分析区内部卡片间距（14）对齐
+                    } else {
+                        Label("需要「流量分析」权限才能展示流量图表", systemImage: "lock")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 16)
+                            .glassIsland(cornerRadius: OCLayout.chipRadius)
+                    }
+                }
+    }
+
+    /// 从 body 拆出的分段（body 表达式过大，Xcode 26.6 编译器类型检查超时）。
+    @ViewBuilder
+    private var manageSection: some View {
+                // 本卡内 eager 门控行的保留判据：目的页是叶子（内部只开 sheet、不再 push）。
+                // 「规则」「负载均衡」的目的页还要继续 push，已改值式（ZoneRoute + 栈根 navdest）；
+                // 其余若日后加内层 push，必须同步改值式。
+                sectionCard(String(localized: "管理")) {
+                    PermissionGatedNavigationLink(
+                        label: String(localized: "DNS 记录"),
+                        systemImage: "network",
+                        requiredScope: "dns.read",
+                        showsChevron: true
+                    ) {
+                        DNSListView(zoneId: zone.id, zoneName: zone.name, session: session)
+                    }
+                    .listRowStyleValue(String(localized: "\(dnsRecordDisplayCount) 条"))
+
+                    // zone 级 DNS 策略（DNSSEC / CNAME 展平 / NS 类型），与逐条记录分开
+                    PermissionGatedValueLink(
+                        label: String(localized: "DNS 设置"),
+                        systemImage: "gearshape.2",
+                        requiredScope: "zone-dns-settings.read",
+                        tint: .indigo,
+                        showsChevron: true,
+                        value: ZoneRoute.dnsSettings(zoneId: zone.id, zoneName: zone.name)
+                    )
+
+                    ProGatedNavigationLink(
+                        label: String(localized: "WAF 防火墙"),
+                        systemImage: "shield",
+                        requiredScope: "zone-waf.read",
+                        feature: .waf,
+                        tint: .purple,
+                        showsChevron: true
+                    ) {
+                        WAFRuleListView(zoneId: zone.id, zoneName: zone.name, session: session)
+                    }
+
+                    ProGatedNavigationLink(
+                        label: "Rate Limiting",
+                        systemImage: "gauge.with.dots.needle.bottom.50percent",
+                        requiredScope: "zone-waf.read",
+                        feature: .rateLimit,
+                        tint: .pink,
+                        showsChevron: true
+                    ) {
+                        RateLimitRulesView(zoneId: zone.id, zoneName: zone.name, session: session)
+                    }
+
+                    // 规则族（Transform / 缓存 / Snippets / 重定向 / 源站 / 配置 / 压缩 /
+                    // 自定义错误 / Page Rules / URL 规范化）统一收进「规则」二级入口
+                    PermissionGatedValueLink(
+                        label: String(localized: "规则"),
+                        systemImage: "list.bullet.rectangle",
+                        requiredScope: "zone.read",
+                        tint: .orange,
+                        showsChevron: true,
+                        value: ZoneRoute.rulesHub(zoneId: zone.id, zoneName: zone.name)
+                    )
+
+                    ProGatedNavigationLink(
+                        label: "Email Routing",
+                        systemImage: "envelope",
+                        requiredScope: "email-routing-rule.read",
+                        feature: .emailRouting,
+                        tint: .pink,
+                        showsChevron: true
+                    ) {
+                        EmailRoutingView(zoneId: zone.id, zoneName: zone.name, session: session)
+                    }
+
+                    PermissionGatedNavigationLink(
+                        label: "SSL/TLS",
+                        systemImage: "lock.shield",
+                        requiredScope: "zone-settings.read",
+                        tint: .green,
+                        showsChevron: true
+                    ) {
+                        ZoneSSLSettingsView(zoneId: zone.id, zoneName: zone.name, session: session)
+                    }
+
+                    PermissionGatedNavigationLink(
+                        label: String(localized: "性能与缓存"),
+                        systemImage: "speedometer",
+                        requiredScope: "zone-settings.read",
+                        tint: .teal,
+                        showsChevron: true
+                    ) {
+                        ZonePerformanceView(zoneId: zone.id, session: session)
+                    }
+
+                    PermissionGatedNavigationLink(
+                        label: String(localized: "SSL 证书"),
+                        systemImage: "checkmark.seal",
+                        requiredScope: "ssl-and-certificates.read",
+                        tint: .green,
+                        showsChevron: true
+                    ) {
+                        ZoneSSLCertsView(zoneId: zone.id, session: session)
+                    }
+
+                    PermissionGatedNavigationLink(
+                        label: String(localized: "IP 访问规则"),
+                        systemImage: "hand.raised",
+                        requiredScope: "firewall-services.read",
+                        tint: .red,
+                        showsChevron: true
+                    ) {
+                        ZoneAccessRulesView(zoneId: zone.id, session: session)
+                    }
+
+                    // 安全洞察（Security Center Insights）：全套餐免费，读写同 zone-settings.*；
+                    // 目的页是叶子（处理链接外跳浏览器，不再 push），eager 门控行即可
+                    PermissionGatedNavigationLink(
+                        label: String(localized: "安全洞察"),
+                        systemImage: "exclamationmark.shield",
+                        requiredScope: "zone-settings.read",
+                        tint: .red,
+                        showsChevron: true
+                    ) {
+                        SecurityInsightsView(zoneId: zone.id, zoneName: zone.name, session: session)
+                    }
+
+                    // 与负载均衡的监控器不同源：这里监控单个源站，单源站也能用
+                    PermissionGatedValueLink(
+                        label: String(localized: "健康检查"),
+                        systemImage: "waveform.path.ecg",
+                        requiredScope: "healthcheck.read",
+                        tint: .green,
+                        showsChevron: true,
+                        value: ZoneRoute.healthChecks(zoneId: zone.id, zoneName: zone.name)
+                    )
+
+                    ProGatedValueLink(
+                        label: String(localized: "负载均衡"),
+                        systemImage: "arrow.left.arrow.right",
+                        requiredScope: "load-balancers.read",
+                        feature: .loadBalancing,
+                        tint: .pink,
+                        showsChevron: true,
+                        value: ZoneRoute.loadBalancers(zoneId: zone.id, zoneName: zone.name)
+                    )
+                }
+    }
+
+    /// 从 body 拆出的分段（body 表达式过大，Xcode 26.6 编译器类型检查超时）。
+    @ViewBuilder
+    private var aiContentSection: some View {
+                // 整卡仅在读到任一组配置时出现：
+                // 机器人管控全套餐可用但需 bot-management.read；
+                // 两个 zone setting 是 Pro 起，免费套餐读得到但不可改（editable == false）。
+                // 与其给用户一排永远打不开的锁，不如不显示。
+                if actionsViewModel.botConfigLoaded || actionsViewModel.aiSettingsAvailable {
+                    sectionCard(String(localized: "AI 内容控制")) {
+                        if actionsViewModel.botConfigLoaded {
+                            // 2026-09-15 起 ai_bots_protection 拆成三类：响应带任一新字段就换成三个选择行，
+                            // 否则保留旧的单选作回退
+                            if actionsViewModel.usesAICrawlerPolicies {
+                                aiCrawlerPolicyRows
+                            } else {
+                                settingPickerRow(
+                                    title: String(localized: "AI 爬虫"),
+                                    subtitle: String(localized: "抓取内容用于训练或问答的机器人"),
+                                    icon: "ant",
+                                    tint: .indigo,
+                                    options: AIBotsProtection.allCases,
+                                    selection: actionsViewModel.aiBotsProtection,
+                                    selectionLabel: actionsViewModel.aiBotsProtection.label,
+                                    optionLabel: \.label,
+                                    isBusy: actionsViewModel.isUpdatingBotConfig,
+                                    canEdit: canEditBots,
+                                    deniedScope: "bot-management.write",
+                                    requestChange: { mode in
+                                        Task { await actionsViewModel.setAIBotsProtection(mode) }
+                                    }
+                                )
+                            }
+
+                            settingToggleRow(
+                                title: String(localized: "链接迷宫"),
+                                subtitle: String(localized: "用无尽链接消耗违规爬虫"),
+                                icon: "arrow.triangle.turn.up.right.diamond",
+                                tint: .indigo,
+                                isOn: actionsViewModel.crawlerProtection,
+                                isBusy: actionsViewModel.isUpdatingBotConfig,
+                                canEdit: canEditBots,
+                                isLoaded: true,
+                                deniedScope: "bot-management.write",
+                                requestToggle: { on in
+                                    Task { await actionsViewModel.setCrawlerProtection(on) }
+                                }
+                            )
+
+                            settingToggleRow(
+                                title: String(localized: "拦截内容机器人"),
+                                subtitle: String(localized: "拦下低可信自动流量，已验证的机器人除外"),
+                                icon: "person.badge.shield.checkmark",
+                                tint: .indigo,
+                                isOn: actionsViewModel.contentBotsProtection,
+                                isBusy: actionsViewModel.isUpdatingBotConfig,
+                                canEdit: canEditBots,
+                                isLoaded: true,
+                                deniedScope: "bot-management.write",
+                                requestToggle: { on in
+                                    Task { await actionsViewModel.setContentBotsProtection(on) }
+                                }
+                            )
+
+                            // Bot Preference Sync 取代托管 robots.txt：响应带该字段才换，否则保留旧开关
+                            if let syncOn = actionsViewModel.botPreferenceSync {
+                                settingToggleRow(
+                                    title: String(localized: "按偏好生成 robots.txt"),
+                                    subtitle: String(localized: "根据以上三项，由 Cloudflare 生成 robots.txt 规则"),
+                                    icon: "list.bullet.rectangle",
+                                    tint: .teal,
+                                    isOn: syncOn,
+                                    isBusy: actionsViewModel.isUpdatingBotConfig,
+                                    canEdit: canEditBots,
+                                    isLoaded: true,
+                                    deniedScope: "bot-management.write",
+                                    requestToggle: { on in
+                                        Task { await actionsViewModel.setBotPreferenceSync(on) }
+                                    }
+                                )
+                            } else {
+                                settingToggleRow(
+                                    title: String(localized: "托管 robots.txt"),
+                                    subtitle: String(localized: "由 Cloudflare 维护，置于现有内容之前"),
+                                    icon: "list.bullet.rectangle",
+                                    tint: .teal,
+                                    isOn: actionsViewModel.managedRobotsTxt,
+                                    isBusy: actionsViewModel.isUpdatingBotConfig,
+                                    canEdit: canEditBots,
+                                    isLoaded: true,
+                                    deniedScope: "bot-management.write",
+                                    requestToggle: { on in
+                                        Task { await actionsViewModel.setManagedRobotsTxt(on) }
+                                    }
+                                )
+                            }
+
+                            settingToggleRow(
+                                title: String(localized: "内容使用声明"),
+                                subtitle: String(localized: "在 robots.txt 中声明内容的使用许可"),
+                                icon: "doc.badge.gearshape",
+                                tint: .teal,
+                                isOn: actionsViewModel.robotsLicense,
+                                isBusy: actionsViewModel.isUpdatingBotConfig,
+                                canEdit: canEditBots,
+                                isLoaded: true,
+                                deniedScope: "bot-management.write",
+                                requestToggle: { on in
+                                    Task { await actionsViewModel.setRobotsLicense(on) }
+                                }
+                            )
+                        }
+
+                        if actionsViewModel.aiTrainingRedirectAvailable {
+                            settingToggleRow(
+                                title: String(localized: "AI 训练重定向"),
+                                subtitle: String(localized: "把用于模型训练的爬虫引走"),
+                                icon: "arrow.triangle.branch",
+                                tint: .purple,
+                                isOn: actionsViewModel.aiTrainingRedirect,
+                                isBusy: actionsViewModel.isTogglingAITrainingRedirect,
+                                canEdit: canEditSettings,
+                                isLoaded: true,
+                                deniedScope: "zone-settings.write",
+                                requestToggle: { on in
+                                    Task { await actionsViewModel.setAITrainingRedirect(on) }
+                                }
+                            )
+                        }
+
+                        if actionsViewModel.markdownForAgentsAvailable {
+                            settingToggleRow(
+                                title: String(localized: "面向 Agent 的 Markdown"),
+                                subtitle: String(localized: "按请求把页面转成 Markdown 返回"),
+                                icon: "doc.plaintext",
+                                tint: .teal,
+                                isOn: actionsViewModel.markdownForAgents,
+                                isBusy: actionsViewModel.isTogglingMarkdownForAgents,
+                                canEdit: canEditSettings,
+                                isLoaded: true,
+                                deniedScope: "zone-settings.write",
+                                requestToggle: { on in
+                                    Task { await actionsViewModel.setMarkdownForAgents(on) }
+                                }
+                            )
+                        }
+                    }
+                }
+    }
+
+    /// 从 body 拆出的分段（body 表达式过大，Xcode 26.6 编译器类型检查超时）。
+    @ViewBuilder
+    private var actionsSection: some View {
+                sectionCard(String(localized: "操作")) {
+                    settingToggleRow(
+                        title: String(localized: "Under Attack 模式"),
+                        subtitle: String(localized: "对所有访客启用质询页"),
+                        icon: "shield.lefthalf.filled",
+                        tint: .red,
+                        isOn: actionsViewModel.underAttack,
+                        isBusy: actionsViewModel.isTogglingUnderAttack,
+                        canEdit: canEditSettings,
+                        isLoaded: actionsViewModel.settingsLoaded,
+                        deniedScope: canReadSettings ? "zone-settings.write" : "zone-settings.read",
+                        requestToggle: { on in pendingAction = .underAttack(on) }
+                    )
+
+                    precursorRow
+
+                    settingToggleRow(
+                        title: String(localized: "开发模式"),
+                        subtitle: String(localized: "临时绕过缓存（3 小时后自动关闭）"),
+                        icon: "hammer",
+                        tint: .blue,
+                        isOn: actionsViewModel.devMode,
+                        isBusy: actionsViewModel.isTogglingDevMode,
+                        canEdit: canEditSettings,
+                        isLoaded: actionsViewModel.settingsLoaded,
+                        deniedScope: canReadSettings ? "zone-settings.write" : "zone-settings.read",
+                        requestToggle: { on in pendingAction = .devMode(on) }
+                    )
+
+                    // 暂停态一直可读（zone.read 是登录基础权限），故 isLoaded 恒 true：
+                    // 无 zone.write 时行内显示当前开/关而非锁，符合「能看不能改」的一致语义。
+                    settingToggleRow(
+                        title: String(localized: "暂停 Cloudflare"),
+                        subtitle: String(localized: "流量绕过 Cloudflare，仅保留 DNS 解析"),
+                        icon: "pause.circle",
+                        tint: .gray,
+                        isOn: actionsViewModel.paused,
+                        isBusy: actionsViewModel.isTogglingPause,
+                        canEdit: canEditZone,
+                        isLoaded: true,
+                        deniedScope: "zone.write",
+                        requestToggle: { on in pendingAction = .pause(on) }
+                    )
+
+                    Button {
+                        if canPurge {
+                            showPurgeConfirm = true
+                        } else {
+                            deniedScopeHint = "cache.purge"
+                            showActionDenied = true
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            TintIcon(systemImage: "trash", color: .ocOrange)
+                            Text("清理全部缓存")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if actionsViewModel.isPurging {
+                                ProgressView()
+                            } else if !canPurge {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .disabled(actionsViewModel.isPurging)
+
+                    // 标记过期（invalidate_cache，2026-09-28 GA）：与清除同权限（cache.purge）、同门槛（免费）
+                    Button {
+                        if canPurge {
+                            showInvalidateConfirm = true
+                        } else {
+                            deniedScopeHint = "cache.purge"
+                            showActionDenied = true
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            TintIcon(systemImage: "clock.arrow.circlepath", color: .ocOrange)
+                            Text("标记过期")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if !canPurge {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .disabled(actionsViewModel.isPurging)
+
+                    Button {
+                        if canPurge {
+                            showPurgeSheet = true
+                        } else {
+                            deniedScopeHint = "cache.purge"
+                            showActionDenied = true
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            TintIcon(systemImage: "scissors", color: .ocOrange)
+                            Text("按目标清理缓存")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: canPurge ? "chevron.right" : "lock.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .disabled(actionsViewModel.isPurging)
+                }
+    }
+
+    /// 从 body 拆出的分段（body 表达式过大，Xcode 26.6 编译器类型检查超时）。
+    @ViewBuilder
+    private var nameServersSection: some View {
+                if !zone.nameServers.isEmpty {
+                    sectionCard("Name Servers") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(zone.nameServers, id: \.self) { server in
+                                Text(server)
+                                    .font(.callout.monospaced())
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+    }
+
+    /// 从 body 拆出的分段（body 表达式过大，Xcode 26.6 编译器类型检查超时）。
+    @ViewBuilder
+    private var zoneIDFooter: some View {
+                // Zone ID footer
+                Text("Zone ID · \(zone.id)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.bottom, 8)
     }
 
     // MARK: - 暂停态与缓存同步
