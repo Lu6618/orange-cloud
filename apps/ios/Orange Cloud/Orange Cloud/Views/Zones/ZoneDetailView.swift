@@ -94,106 +94,14 @@ struct ZoneDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                heroCard
-                analyticsSection
-                manageSection
-                aiContentSection
-                actionsSection
-                nameServersSection
-                zoneIDFooter
-            }
-            .padding()
-        }
-        .background { SkyBackground() }
-        .navigationTitle(zone.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                // 置顶以 PinnedResourceStore 为准（跨资源类型统一）；同时把旧的
-                // CachedZone.pinned 字段镜像写回，老数据/其它入口读它时不至于分裂。
-                Button(isPinned ? String(localized: "取消固定") : String(localized: "固定到首页"),
-                       systemImage: isPinned ? "pin.fill" : "pin") {
-                    let nowPinned = pinnedStore.toggle(
-                        PinnedResource(type: .zone, resourceId: zone.id),
-                        accountId: zone.accountId
-                    )
-                    withAnimation(.smooth) {
-                        zone.pinned = nowPinned
-                    }
-                    SafeCache.perform("pin 状态保存") { try modelContext.save() }
-                }
-                .contentTransition(.symbolEffect(.replace))
-            }
-        }
-        .sensoryFeedback(.impact(weight: .light), trigger: zone.pinned)
-        .sensoryFeedback(.success, trigger: actionsViewModel.didPurge)
-        .sensoryFeedback(.success, trigger: actionsViewModel.didInvalidate)
-        .task {
-            if canReadSettings {
-                await actionsViewModel.loadSettings()
-                await actionsViewModel.loadAISettings()
-            }
-            if canReadBots {
-                await actionsViewModel.loadBotConfig()
-            }
-            if canReadPrecursor {
-                await actionsViewModel.loadPrecursor()
-            }
-        }
-        .task {
-            // 暂停态只需 zone.read（登录必备），与上面的 settings 权限无关：
-            // 进页用 API 校准一次，纠正列表缓存里过期的暂停态
-            await syncPausedFromAPI()
-        }
-        .task {
-            // 该 zone 尚未统计过记录数（前 50 个之外 / Dashboard 未加载完就进来）：
-            // 入页轻量拉一次 total_count 回写缓存，首屏不显示 0 条
-            if zone.dnsRecordCount == nil, records.isEmpty, auth.hasScope("dns.read"),
-               let count = try? await session.dnsService.recordCount(zoneId: zone.id) {
-                zone.dnsRecordCount = count
-                SafeCache.perform("dnsRecordCount 保存") { try modelContext.save() }
-            }
-        }
-        .refreshable {
-            if auth.hasScope("analytics.read") {
-                await analyticsViewModel.refresh()
-                await trafficDetailsViewModel.refresh(range: analyticsViewModel.selectedRange)
-            }
-            if canReadSettings {
-                await actionsViewModel.loadSettings()
-                await actionsViewModel.loadAISettings()
-            }
-            if canReadBots {
-                await actionsViewModel.loadBotConfig()
-            }
-            if canReadPrecursor {
-                await actionsViewModel.loadPrecursor()
-            }
-            await syncPausedFromAPI()
-        }
+        contentWithOverlays
         .confirmationDialog(
             pendingAction?.title ?? "",
-            isPresented: .init(
-                get: { pendingAction != nil },
-                set: { if !$0 { pendingAction = nil } }
-            ),
+            isPresented: pendingActionBinding,
             titleVisibility: .visible,
             presenting: pendingAction
         ) { action in
-            Button(action.confirmLabel) {
-                Task {
-                    switch action {
-                    case .underAttack(let on): await actionsViewModel.setUnderAttack(on)
-                    case .devMode(let on):     await actionsViewModel.setDevMode(on)
-                    case .pause(let on):
-                        if await actionsViewModel.setPaused(on) {
-                            writeBackPaused(actionsViewModel.paused)
-                        }
-                    }
-                }
-            }
+            pendingActionConfirmButton(for: action)
         } message: { action in
             Text(action.message(zoneName: zone.name))
         }
@@ -254,6 +162,118 @@ struct ZoneDetailView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(actionsViewModel.error ?? "")
+        }
+    }
+
+
+    /// 底座：滚动内容 + 导航标题（从 body 拆出，Xcode 26.6 编译器类型检查超时）。
+    private var mainScrollView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                heroCard
+                analyticsSection
+                manageSection
+                aiContentSection
+                actionsSection
+                nameServersSection
+                zoneIDFooter
+            }
+            .padding()
+        }
+        .background { SkyBackground() }
+        .navigationTitle(zone.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// 工具栏内容（从 body 拆出）。
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            // 置顶以 PinnedResourceStore 为准（跨资源类型统一）；同时把旧的
+            // CachedZone.pinned 字段镜像写回，老数据/其它入口读它时不至于分裂。
+            Button(isPinned ? String(localized: "取消固定") : String(localized: "固定到首页"),
+                   systemImage: isPinned ? "pin.fill" : "pin") {
+                let nowPinned = pinnedStore.toggle(
+                    PinnedResource(type: .zone, resourceId: zone.id),
+                    accountId: zone.accountId
+                )
+                withAnimation(.smooth) {
+                    zone.pinned = nowPinned
+                }
+                SafeCache.perform("pin 状态保存") { try modelContext.save() }
+            }
+            .contentTransition(.symbolEffect(.replace))
+        }
+    }
+
+    /// 底座 + 工具栏/触感反馈/任务/下拉刷新（从 body 拆出）。
+    private var contentWithOverlays: some View {
+        mainScrollView
+            .toolbar { toolbarContent }
+        .sensoryFeedback(.impact(weight: .light), trigger: zone.pinned)
+        .sensoryFeedback(.success, trigger: actionsViewModel.didPurge)
+        .sensoryFeedback(.success, trigger: actionsViewModel.didInvalidate)
+            .task { await loadInitialData() }
+            .task { await syncPausedFromAPI() }
+            .task { await loadDNSRecordCountIfNeeded() }
+            .refreshable { await refreshAll() }
+    }
+
+    /// pendingAction dialog 的绑定（同 errorAlertBinding 的拆法）。
+    private var pendingActionBinding: Binding<Bool> {
+        Binding(
+            get: { pendingAction != nil },
+            set: { if !$0 { pendingAction = nil } }
+        )
+    }
+
+    @ViewBuilder
+    private func pendingActionConfirmButton(for action: PendingZoneAction) -> some View {
+        Button(action.confirmLabel) {
+            Task {
+                switch action {
+                case .underAttack(let on): await actionsViewModel.setUnderAttack(on)
+                case .devMode(let on):     await actionsViewModel.setDevMode(on)
+                case .pause(let on):
+                    if await actionsViewModel.setPaused(on) {
+                        writeBackPaused(actionsViewModel.paused)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 入页加载：设置 + AI 设置 + 机器人配置 + Precursor（.task 与下拉刷新共用）。
+    private func loadInitialData() async {
+        if canReadSettings {
+            await actionsViewModel.loadSettings()
+            await actionsViewModel.loadAISettings()
+        }
+        if canReadBots {
+            await actionsViewModel.loadBotConfig()
+        }
+        if canReadPrecursor {
+            await actionsViewModel.loadPrecursor()
+        }
+    }
+
+    /// 下拉刷新：流量分析 + 入页加载 + 暂停态校准。
+    private func refreshAll() async {
+        if auth.hasScope("analytics.read") {
+            await analyticsViewModel.refresh()
+            await trafficDetailsViewModel.refresh(range: analyticsViewModel.selectedRange)
+        }
+        await loadInitialData()
+        await syncPausedFromAPI()
+    }
+
+    /// 入页补拉 DNS 记录总数（未加载完就进来时首屏不显示 0 条）。
+    private func loadDNSRecordCountIfNeeded() async {
+        // 该 zone 尚未统计过记录数（前 50 个之外 / Dashboard 未加载完就进来）：
+        // 入页轻量拉一次 total_count 回写缓存，首屏不显示 0 条
+        if zone.dnsRecordCount == nil, records.isEmpty, auth.hasScope("dns.read"),
+           let count = try? await session.dnsService.recordCount(zoneId: zone.id) {
+            zone.dnsRecordCount = count
+            SafeCache.perform("dnsRecordCount 保存") { try modelContext.save() }
         }
     }
 
