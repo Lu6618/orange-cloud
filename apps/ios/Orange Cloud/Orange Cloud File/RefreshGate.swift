@@ -15,7 +15,7 @@ import Foundation
 enum RefreshGate {
 
     /// 与 entitlements 的 application-groups 对齐
-    private static let appGroupID = "group.jiamin.chen.Orange-Cloud"
+    private static let appGroupID = "group.KTUXULV5G6.orange-cloud"
 
     /// 取得「该身份刷新」的跨进程独占锁。非 nil = 已持锁（调用方必须 release）；nil = 降级（照常刷）。
     static func acquire(sessionId: String) async -> Int32? {
