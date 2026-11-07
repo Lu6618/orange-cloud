@@ -23,7 +23,8 @@ struct WorkerListView: View {
     @State private var showTailDenied = false
     @State private var showCreate = false
     @State private var createDenied = false
-    @State private var deleteTarget: CachedWorkerScript?
+    @State private var deleteName: String?
+    @State private var showDelete = false
     @State private var deleteDenied = false
     @AppStorage("workerListSort") private var sort: ResourceSort = .name
 
@@ -101,16 +102,18 @@ struct WorkerListView: View {
                     Task { await refresh() }
                 }
             }
-            .sheet(item: $deleteTarget, onDismiss: {
-                // sheet 完全关闭后再清缓存（见 WorkerDeleteConfirmView.performDelete）：
-                // 关闭动画中 sheet 仍持有 script 对象，此时 context.delete 会让重绘访问
-                // 已删对象导致闪退；onDismiss 在关闭完成后才触发，不用猜等待时长。
-                if let script = viewModel.pendingDelete {
-                    viewModel.pendingDelete = nil
-                    viewModel.removeFromCache(script: script, context: modelContext)
+            .sheet(isPresented: $showDelete, onDismiss: {
+                // 确认页只拿脚本名、不持有 SwiftData 对象；服务端删除成功后这里刷新对账，
+                // syncWorkers 会删掉远端已不存在的条目——删除流程里没有任何 context.delete，
+                // build-4/6/7 的闪退（关闭动画中重绘访问已删对象）从写法上不可能再发生。
+                if viewModel.needsRefreshAfterDelete {
+                    viewModel.needsRefreshAfterDelete = false
+                    Task { await refresh() }
                 }
-            }) { script in
-                WorkerDeleteConfirmView(script: script, viewModel: viewModel, accountId: script.accountId)
+            }) {
+                if let name = deleteName {
+                    WorkerDeleteConfirmView(scriptName: name, viewModel: viewModel, accountId: session.selectedAccount?.id ?? "")
+                }
             }
             .sensoryFeedback(.success, trigger: uploadViewModel.didUpload)
             .sensoryFeedback(.success, trigger: viewModel.didDelete)
@@ -159,7 +162,7 @@ struct WorkerListView: View {
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            if canWrite { deleteTarget = script } else { deleteDenied = true }
+                            if canWrite { deleteName = script.id; showDelete = true } else { deleteDenied = true }
                         } label: {
                             Label("删除", systemImage: "trash")
                         }
