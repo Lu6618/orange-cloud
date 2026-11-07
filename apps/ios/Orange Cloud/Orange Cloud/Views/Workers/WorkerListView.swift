@@ -77,61 +77,80 @@ struct WorkerListView: View {
         //  · 在「被 push 的子视图」上挂 .navigationDestination 又会失灵（导航栏切了、内容不切）。
         // 故详情走「行内 NavigationLink(destination:)」直接 push 进宿主栈，实时日志改用 .sheet，均不依赖 .navigationDestination。
         // iOS 17 整页卡死 / iOS 26 秒级卡顿的根因是宿主 eager 急切构造本页，已在 PermissionGatedNavigationLink 用 LazyView 解决。
-        Group {
-            Group {
-                if cachedScripts.isEmpty && viewModel.isLoading {
-                    SkeletonList(rows: 8, trailing: true)
-                } else if cachedScripts.isEmpty {
-                    emptyState
-                } else if filteredScripts.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
-                } else {
-                    scriptList
-                }
-            }
-            .background { SkyBackground() }
-            .navigationTitle("Workers")
-            .searchable(text: $searchText, prompt: "搜索脚本")
-            .sheet(item: $tailTarget) { script in
-                NavigationStack {
-                    WorkerTailView(accountId: script.accountId, scriptName: script.id, session: session)
-                }
-            }
-            .toolbar {
-                // 竖轴空间不够时系统默认从下往上收项目，主动作会先被收走；
-                // 标了优先级后「新建」留到最后，排序 / 刷新先进溢出菜单（见 OCToolbarPriority）。
-                ToolbarItem(placement: .topBarTrailing) {
-                    ResourceSortMenu(sort: $sort)
-                }
-                .ocPriority(.secondary)
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("新建 Worker", systemImage: "plus") {
-                        if canWrite { showCreate = true } else { createDenied = true }
+        // body 拆成 content / toolbarContent / withAlerts 三段：整条修饰链写在一起会让
+        // Swift 6 类型检查超时（build-9、build-10 连着两次编译失败），与 build-4 的
+        // ZoneDetailView 是同一类问题。
+        withAlerts(
+            content
+                .background { SkyBackground() }
+                .navigationTitle("Workers")
+                .searchable(text: $searchText, prompt: "搜索脚本")
+                .sheet(item: $tailTarget) { script in
+                    NavigationStack {
+                        WorkerTailView(accountId: script.accountId, scriptName: script.id, session: session)
                     }
                 }
-                .ocPriority(.primary)
-                ToolbarItem(placement: .topBarTrailing) {
-                    RefreshButton(
-                        isLoading: viewModel.isLoading,
-                        failed: viewModel.error != nil,
-                        action: { Task { await refresh() } }
-                    )
+                .toolbar { toolbarContent }
+                .sheet(isPresented: $showCreate) {
+                    WorkerUploadView(mode: .create, viewModel: uploadViewModel) {
+                        Task { await refresh() }
+                    }
                 }
-                .ocPriority(.secondary)
-            }
-            .sheet(isPresented: $showCreate) {
-                WorkerUploadView(mode: .create, viewModel: uploadViewModel) {
-                    Task { await refresh() }
+                .sheet(item: $deleteTarget, onDismiss: handleDeleteSheetDismiss) { target in
+                    WorkerDeleteConfirmView(scriptName: target.id, viewModel: viewModel, accountId: session.selectedAccount?.id ?? "")
                 }
+                .sensoryFeedback(.success, trigger: uploadViewModel.didUpload)
+                .sensoryFeedback(.success, trigger: viewModel.didDelete)
+                .task {
+                    await refresh()
+                }
+        )
+    }
+
+    private var content: some View {
+        Group {
+            if cachedScripts.isEmpty && viewModel.isLoading {
+                SkeletonList(rows: 8, trailing: true)
+            } else if cachedScripts.isEmpty {
+                emptyState
+            } else if filteredScripts.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+            } else {
+                scriptList
             }
-            .sheet(item: $deleteTarget, onDismiss: handleDeleteSheetDismiss) { target in
-                WorkerDeleteConfirmView(scriptName: target.id, viewModel: viewModel, accountId: session.selectedAccount?.id ?? "")
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        // 竖轴空间不够时系统默认从下往上收项目，主动作会先被收走；
+        // 标了优先级后「新建」留到最后，排序 / 刷新先进溢出菜单（见 OCToolbarPriority）。
+        ToolbarItem(placement: .topBarTrailing) {
+            ResourceSortMenu(sort: $sort)
+        }
+        .ocPriority(.secondary)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("新建 Worker", systemImage: "plus") {
+                if canWrite { showCreate = true } else { createDenied = true }
             }
-            .sensoryFeedback(.success, trigger: uploadViewModel.didUpload)
-            .sensoryFeedback(.success, trigger: viewModel.didDelete)
-            .task {
-                await refresh()
-            }
+        }
+        .ocPriority(.primary)
+        ToolbarItem(placement: .topBarTrailing) {
+            RefreshButton(
+                isLoading: viewModel.isLoading,
+                failed: viewModel.error != nil,
+                action: { Task { await refresh() } }
+            )
+        }
+        .ocPriority(.secondary)
+    }
+
+    private var deleteErrorBinding: Binding<Bool> {
+        Binding(get: { viewModel.deleteError != nil }, set: { if !$0 { viewModel.deleteError = nil } })
+    }
+
+    private func withAlerts<V: View>(_ view: V) -> some View {
+        view
             .alert("权限不足", isPresented: $showTailDenied) {
                 Button("好", role: .cancel) {}
             } message: {
@@ -147,12 +166,11 @@ struct WorkerListView: View {
             } message: {
                 Text("当前授权未包含 Workers 写权限（workers-scripts.write）。\n请在设置中退出登录后重新授权以启用此功能。")
             }
-            .alert("删除失败", isPresented: Binding(get: { viewModel.deleteError != nil }, set: { if !$0 { viewModel.deleteError = nil } })) {
+            .alert("删除失败", isPresented: deleteErrorBinding) {
                 Button("好", role: .cancel) {}
             } message: {
                 Text(viewModel.deleteError ?? "删除失败，Worker 未删除。")
             }
-        }
     }
 
     private var scriptList: some View {
