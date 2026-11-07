@@ -2,7 +2,8 @@
 //  D1DropTableConfirmView.swift
 //  Orange Cloud
 //
-//  D1 表删除二次确认（Sheet）：必须原样输入表名才能启用删除按钮，与数据库删除确认一致。
+//  D1 表删除二次确认（Sheet）：表名自动填入，核对后点删除即可
+//  （原为手动输入确认，2026-11-07 按 Lu 要求改自动填入，与数据库删除确认一致）。
 //  入口（D1QueryView 表列表长按菜单）已按 d1.write 门控。DROP TABLE 连同全部数据，不可恢复。
 //
 
@@ -56,9 +57,9 @@ struct D1DropTableConfirmView: View {
                         .submitLabel(.done)
                         .onSubmit { Task { await performDrop() } }
                 } header: {
-                    Text("输入表名以确认")
+                    Text("确认表名")
                 } footer: {
-                    Text("请输入 \(tableName) 以启用删除。")
+                    Text("名称已自动填入，核对无误后点下方删除。")
                 }
 
                 if let error = viewModel.dropError {
@@ -94,7 +95,7 @@ struct D1DropTableConfirmView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear { fieldFocused = true }
+            .onAppear { typedName = tableName }
             .interactiveDismissDisabled(viewModel.isDroppingTable)
         }
     }
