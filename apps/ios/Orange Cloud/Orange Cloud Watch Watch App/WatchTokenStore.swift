@@ -14,7 +14,7 @@ nonisolated enum WatchTokenStore {
 
     private static let service = "app.orangecloud.oauth"
     /// 与 iPhone TokenStore.sharedAccessGroup 一致；watch 本机的同名共享组
-    private static let accessGroup = "6G78MMY657.jiamin.chen.orange-cloud.shared"
+    private static let accessGroup = "KTUXULV5G6.jiamin.chen.orange-cloud.shared"
 
     /// SharedAuth 解码的最小结构（多余字段会被 Codable 忽略，故与 StoredToken 兼容）
     private struct SharedToken: Codable {
