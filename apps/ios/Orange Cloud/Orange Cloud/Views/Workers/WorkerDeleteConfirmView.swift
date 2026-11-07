@@ -107,6 +107,8 @@ struct WorkerDeleteConfirmView: View {
     private func performDelete() async {
         guard canDelete else { return }
         fieldFocused = false
+        // 埋点：下次再闪退时，崩溃报告里的面包屑能证明点删除时走到了这里
+        CrashReporter.recordBreadcrumb("Delete confirm tapped: \(scriptName)")
         // 点删除即关 sheet：行先从列表消失（列表 onDismiss 记下名字并乐观隐藏），
         // 服务端删除在后台做，成功后刷新对账，失败则行恢复并弹提示。
         // 本页只拿脚本名，不持有 SwiftData 对象；删除流程里没有任何 context.delete。
