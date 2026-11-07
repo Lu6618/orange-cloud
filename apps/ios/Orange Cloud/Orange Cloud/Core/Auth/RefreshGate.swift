@@ -23,7 +23,7 @@ import Foundation
 nonisolated enum RefreshGate {
 
     /// 与 entitlements / WidgetSnapshot.appGroupID 对齐
-    private static let appGroupID = "group.jiamin.chen.Orange-Cloud"
+    private static let appGroupID = "group.KTUXULV5G6.orange-cloud"
 
     /// 取得「该身份刷新」的跨进程独占锁。返回非 nil 句柄表示已持锁——调用方**必须**用 `release` 释放；
     /// 返回 nil 表示降级（无共享容器 / 打不开 / 约 6s 内没抢到），调用方照常往下刷即可。
