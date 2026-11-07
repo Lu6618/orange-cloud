@@ -21,7 +21,7 @@ nonisolated struct ExtPushMessage: Codable {
 }
 
 nonisolated enum ExtPushInbox {
-    static let appGroupID = "group.KTUXULV5G6.orange-cloud"
+    static let appGroupID = "group.bd48607365f0c18e.1"
     static let storeKey = "push.inbox.messages"
     private static let cap = 200
 
