@@ -2,7 +2,8 @@
 //  R2BucketDeleteConfirmView.swift
 //  Orange Cloud
 //
-//  R2 存储桶删除二次确认（Sheet）：必须原样输入桶名称才能启用删除。
+//  R2 存储桶删除二次确认（Sheet）：名称自动填入，核对后点删除即可
+//  （原为手动输入确认，2026-11-07 按 Lu 要求改自动填入）。
 //  入口（StorageView 滑动删除）已按 workers-r2.write 门控。
 //  注意：Cloudflare 要求桶内对象为空才能删除，否则服务端报错。
 //
@@ -57,9 +58,9 @@ struct R2BucketDeleteConfirmView: View {
                         .submitLabel(.done)
                         .onSubmit { Task { await performDelete() } }
                 } header: {
-                    Text("输入存储桶名称以确认")
+                    Text("确认存储桶名称")
                 } footer: {
-                    Text("请输入 \(bucket.name) 以启用删除。")
+                    Text("名称已自动填入，核对无误后点下方删除。")
                 }
 
                 if let error = viewModel.error {
@@ -95,7 +96,7 @@ struct R2BucketDeleteConfirmView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear { fieldFocused = true }
+            .onAppear { typedName = bucket.name }
             .interactiveDismissDisabled(viewModel.isDeleting)
         }
     }
