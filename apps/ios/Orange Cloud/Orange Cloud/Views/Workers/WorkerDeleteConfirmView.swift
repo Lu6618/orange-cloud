@@ -2,8 +2,9 @@
 //  WorkerDeleteConfirmView.swift
 //  Orange Cloud
 //
-//  Worker 脚本删除二次确认（Sheet）：必须原样输入脚本名称才能启用删除按钮，
-//  与 Cloudflare Dashboard 的删除确认一致。入口（WorkerListView 滑动删除）已按
+//  Worker 脚本删除二次确认（Sheet）：名称自动填入，核对后点删除即可
+//  （原为手动输入确认，2026-11-07 按 Lu 要求改自动填入；注意：打开即满足删除条件，
+//  误删风险高于手动输入版）。入口（WorkerListView 滑动删除）已按
 //  workers-scripts.write 门控。删除连同其部署与路由绑定，不可恢复。
 //
 
@@ -60,9 +61,9 @@ struct WorkerDeleteConfirmView: View {
                         .submitLabel(.done)
                         .onSubmit { Task { await performDelete() } }
                 } header: {
-                    Text("输入 Worker 名称以确认")
+                    Text("确认 Worker 名称")
                 } footer: {
-                    Text("请输入 \(script.id) 以启用删除。")
+                    Text("名称已自动填入，核对无误后点下方删除。")
                 }
 
                 if let error = viewModel.error {
@@ -98,7 +99,7 @@ struct WorkerDeleteConfirmView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear { fieldFocused = true }
+            .onAppear { typedName = script.id }
             .interactiveDismissDisabled(viewModel.isDeleting)
         }
     }
