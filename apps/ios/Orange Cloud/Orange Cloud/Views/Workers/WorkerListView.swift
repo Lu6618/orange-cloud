@@ -49,6 +49,19 @@ struct WorkerListView: View {
         _uploadViewModel = State(initialValue: WorkerUploadViewModel(service: session.workerService, accountId: accountId))
     }
 
+    // 乐观删除：行先从列表消失（pendingDeletedNames 过滤），服务端删除在后台做；
+    // 成功后刷新对账，失败则行恢复并弹提示。确认页只拿名字，不持有对象，
+    // 删除流程里没有任何 context.delete，build-4/6/7 的闪退从写法上不可能再发生。
+    // 抽成独立方法：onDismiss 闭包里直接写这段会让 Swift 6 类型检查超时（build-9 编译失败），
+    // 与 build-4 的 ZoneDetailView 是同一类问题。
+    private func handleDeleteSheetDismiss() {
+        guard let name = viewModel.pendingDeleteName else { return }
+        viewModel.pendingDeleteName = nil
+        viewModel.pendingDeletedNames.insert(name)
+        let accountId = session.selectedAccount?.id ?? ""
+        Task { await viewModel.deleteAndRefresh(accountId: accountId, scriptName: name, context: modelContext) }
+    }
+
     private var filteredScripts: [CachedWorkerScript] {
         let scripts = searchText.isEmpty
             ? Array(cachedScripts)
@@ -111,16 +124,7 @@ struct WorkerListView: View {
                     Task { await refresh() }
                 }
             }
-            .sheet(item: $deleteTarget, onDismiss: {
-                // 乐观删除：行先从列表消失（pendingDeletedNames 过滤），服务端删除在后台做；
-                // 成功后刷新对账，失败则行恢复并弹提示。确认页只拿名字，不持有对象，
-                // 删除流程里没有任何 context.delete，build-4/6/7 的闪退从写法上不可能再发生。
-                if let name = viewModel.pendingDeleteName {
-                    viewModel.pendingDeleteName = nil
-                    viewModel.pendingDeletedNames.insert(name)
-                    Task { await viewModel.deleteAndRefresh(accountId: session.selectedAccount?.id ?? "", scriptName: name, context: modelContext) }
-                }
-            }) { target in
+            .sheet(item: $deleteTarget, onDismiss: handleDeleteSheetDismiss) { target in
                 WorkerDeleteConfirmView(scriptName: target.id, viewModel: viewModel, accountId: session.selectedAccount?.id ?? "")
             }
             .sensoryFeedback(.success, trigger: uploadViewModel.didUpload)
