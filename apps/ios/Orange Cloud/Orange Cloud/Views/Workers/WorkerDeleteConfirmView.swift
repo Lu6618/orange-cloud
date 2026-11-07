@@ -11,7 +11,6 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct WorkerDeleteConfirmView: View {
 
@@ -108,14 +107,10 @@ struct WorkerDeleteConfirmView: View {
     private func performDelete() async {
         guard canDelete else { return }
         fieldFocused = false
-        // 本页只拿脚本名（String），不持有 SwiftData 对象；服务端删除成功后直接关 sheet，
-        // 缓存由列表在 onDismiss 里刷新对账（syncWorkers 会删掉远端已不存在的条目）——
-        // 删除流程里没有任何 context.delete，确认页、列表都不可能读到已删对象，
-        // build-4/6/7 的闪退根因（关闭动画中重绘访问已删对象）从写法上就不可能再发生。
-        // 服务端删除失败时留在本页显示错误，不关 sheet。
-        guard await viewModel.deleteFromServer(accountId: accountId, scriptName: scriptName) else { return }
-        viewModel.didDelete.toggle()
-        viewModel.needsRefreshAfterDelete = true
+        // 点删除即关 sheet：行先从列表消失（列表 onDismiss 记下名字并乐观隐藏），
+        // 服务端删除在后台做，成功后刷新对账，失败则行恢复并弹提示。
+        // 本页只拿脚本名，不持有 SwiftData 对象；删除流程里没有任何 context.delete。
+        viewModel.pendingDeleteName = scriptName
         dismiss()
     }
 }
