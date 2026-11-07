@@ -2,8 +2,8 @@
 //  D1DeleteConfirmView.swift
 //  Orange Cloud
 //
-//  D1 数据库删除二次确认（Sheet）：必须原样输入数据库名称才能启用删除按钮，
-//  与 Cloudflare Dashboard 的删除确认一致。入口（StorageView 滑动删除）已按
+//  D1 数据库删除二次确认（Sheet）：名称自动填入，核对后点删除即可
+//  （原为手动输入确认，2026-11-07 按 Lu 要求改自动填入）。入口（StorageView 滑动删除）已按
 //  d1.write 门控。删除连同全部表与数据，不可恢复。
 //
 
@@ -58,9 +58,9 @@ struct D1DeleteConfirmView: View {
                         .submitLabel(.done)
                         .onSubmit { Task { await performDelete() } }
                 } header: {
-                    Text("输入数据库名称以确认")
+                    Text("确认数据库名称")
                 } footer: {
-                    Text("请输入 \(database.name) 以启用删除。")
+                    Text("名称已自动填入，核对无误后点下方删除。")
                 }
 
                 if let error = viewModel.error {
@@ -96,7 +96,7 @@ struct D1DeleteConfirmView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear { fieldFocused = true }
+            .onAppear { typedName = database.name }
             .interactiveDismissDisabled(viewModel.isDeleting)
         }
     }
