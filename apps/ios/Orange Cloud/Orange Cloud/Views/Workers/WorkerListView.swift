@@ -56,8 +56,12 @@ struct WorkerListView: View {
     // 与 build-4 的 ZoneDetailView 是同一类问题。
     private func handleDeleteSheetDismiss() {
         guard let name = viewModel.pendingDeleteName else { return }
+        CrashReporter.recordBreadcrumb("Delete sheet dismissed: \(name)")
         viewModel.pendingDeleteName = nil
         viewModel.pendingDeletedNames.insert(name)
+        // 行消失的同时让 List 整表重建（.id 变化），不走行删除 diff：
+        // 崩溃日志证明闪退是 List 行数 diff 不一致，重建绕开 diff。
+        viewModel.listVersion += 1
         let accountId = session.selectedAccount?.id ?? ""
         Task { await viewModel.deleteAndRefresh(accountId: accountId, scriptName: name, context: modelContext) }
     }
@@ -221,6 +225,9 @@ struct WorkerListView: View {
             }
             .glassRow()
         }
+        // 删除时 listVersion +1，整表重建而不是做行删除 diff：
+        // 崩溃日志证明闪退是 List 行数 diff 不一致，重建绕开 diff。
+        .id(viewModel.listVersion)
         .scrollContentBackground(.hidden)
         .refreshable {
             await refresh()
