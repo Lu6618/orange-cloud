@@ -107,8 +107,12 @@ struct WorkerDeleteConfirmView: View {
     private func performDelete() async {
         guard canDelete else { return }
         fieldFocused = false
-        if await viewModel.delete(accountId: accountId, script: script, context: modelContext) {
-            dismiss()
-        }
+        // 先调服务端删除；成功后再关 sheet，等关闭动画结束才清缓存——
+        // sheet 关闭前清缓存会让关闭动画中的重绘访问已删对象导致闪退（2026-11-07 实测）。
+        // 服务端删除失败时留在本页显示错误，不关 sheet。
+        guard await viewModel.deleteFromServer(accountId: accountId, scriptName: script.id) else { return }
+        dismiss()
+        try? await Task.sleep(for: .milliseconds(350))
+        viewModel.removeFromCache(script: script, context: modelContext)
     }
 }
