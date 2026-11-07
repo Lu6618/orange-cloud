@@ -17,8 +17,12 @@ final class WorkerListViewModel {
     var error: String?
     var isDeleting = false
     var didDelete = false       // sensoryFeedback 触发器
-    /// 服务端删除成功后，列表需在 sheet 关闭后刷新对账（见 WorkerListView onDismiss）。
-    var needsRefreshAfterDelete = false
+    /// 确认页点删除后记下的脚本名（列表 onDismiss 消费，见 WorkerListView）。
+    var pendingDeleteName: String?
+    /// 乐观删除中正隐藏的名字：行先从列表消失，服务端删除在后台做（见 deleteAndRefresh）。
+    var pendingDeletedNames: Set<String> = []
+    /// 后台删除失败时的错误信息（列表弹提示）。
+    var deleteError: String?
 
     private let workerService: WorkerService
     /// 进行中的加载任务（见 ZoneListViewModel：独立 Task 承载加载，避免下拉手势取消导致 .cancelled 误报）
@@ -45,22 +49,23 @@ final class WorkerListViewModel {
         await task.value
     }
 
-    /// 删除 Worker 脚本（只调服务端，不动缓存）。缓存由列表刷新对账：
-    /// syncWorkers 会删掉远端已不存在的条目，且刷新时确认页早已关闭。
-    /// 删除流程里不做 context.delete——build-4/6/7 的闪退都是关闭动画中重绘访问
-    /// 已删 SwiftData 对象所致，2026-11-07 实测三版皆崩，改由刷新对账才彻底。
+    /// 后台删除 Worker：先调服务端删除，成功后直接 load 刷新对账
+    /// （syncWorkers 会删掉远端已不存在的条目；不用 refresh 的 loadTask 去重，
+    /// 否则正好有刷新在跑时会直接返回、不重新拉取，删掉的行又会回来）。
+    /// 失败时把乐观隐藏的名字放回列表并记 deleteError（列表弹提示）。
+    /// 删除流程里没有任何 context.delete：确认页只拿名字、不持有 SwiftData 对象，
+    /// 缓存只在刷新对账时由 syncWorkers 动——build-4/6/7 的闪退
+    /// （关闭动画中重绘访问已删对象）从写法上不可能再发生。
     /// 需 workers-scripts.write。
-    func deleteFromServer(accountId: String, scriptName: String) async -> Bool {
-        guard !isDeleting else { return false }
-        isDeleting = true
-        error = nil
-        defer { isDeleting = false }
+    func deleteAndRefresh(accountId: String, scriptName: String, context: ModelContext) async {
         do {
             try await workerService.deleteScript(accountId: accountId, scriptName: scriptName)
-            return true
+            await load(accountId: accountId, context: context)
+            pendingDeletedNames.remove(scriptName)
+            didDelete.toggle()
         } catch {
-            self.error = error.localizedDescription
-            return false
+            pendingDeletedNames.remove(scriptName)
+            deleteError = error.localizedDescription
         }
     }
 
