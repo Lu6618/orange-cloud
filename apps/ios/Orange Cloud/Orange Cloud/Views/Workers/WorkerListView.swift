@@ -9,6 +9,14 @@
 import SwiftUI
 import SwiftData
 
+/// 删除确认 sheet 的目标：只带脚本名（String），不持有 SwiftData 对象。
+/// 用 .sheet(item:) 承载，保证确认页打开时名字一定在，不会空白
+/// （build-8 用 .sheet(isPresented:) + 另一个状态传名字，左滑点删除时
+/// 名字还没落到位就打开了空白页）。
+private struct WorkerDeleteTarget: Identifiable {
+    let id: String  // 脚本名
+}
+
 struct WorkerListView: View {
 
     @Environment(SessionStore.self) private var session
@@ -23,8 +31,7 @@ struct WorkerListView: View {
     @State private var showTailDenied = false
     @State private var showCreate = false
     @State private var createDenied = false
-    @State private var deleteName: String?
-    @State private var showDelete = false
+    @State private var deleteTarget: WorkerDeleteTarget?
     @State private var deleteDenied = false
     @AppStorage("workerListSort") private var sort: ResourceSort = .name
 
@@ -46,7 +53,9 @@ struct WorkerListView: View {
         let scripts = searchText.isEmpty
             ? Array(cachedScripts)
             : cachedScripts.filter { $0.id.localizedCaseInsensitiveContains(searchText) }
-        return sort.sorted(scripts, created: \.createdOn, modified: \.modifiedOn)
+        // 乐观删除中正隐藏的名字（行先消失，服务端删除在后台做）
+        let visible = scripts.filter { !viewModel.pendingDeletedNames.contains($0.id) }
+        return sort.sorted(visible, created: \.createdOn, modified: \.modifiedOn)
     }
 
     var body: some View {
@@ -102,18 +111,17 @@ struct WorkerListView: View {
                     Task { await refresh() }
                 }
             }
-            .sheet(isPresented: $showDelete, onDismiss: {
-                // 确认页只拿脚本名、不持有 SwiftData 对象；服务端删除成功后这里刷新对账，
-                // syncWorkers 会删掉远端已不存在的条目——删除流程里没有任何 context.delete，
-                // build-4/6/7 的闪退（关闭动画中重绘访问已删对象）从写法上不可能再发生。
-                if viewModel.needsRefreshAfterDelete {
-                    viewModel.needsRefreshAfterDelete = false
-                    Task { await refresh() }
+            .sheet(item: $deleteTarget, onDismiss: {
+                // 乐观删除：行先从列表消失（pendingDeletedNames 过滤），服务端删除在后台做；
+                // 成功后刷新对账，失败则行恢复并弹提示。确认页只拿名字，不持有对象，
+                // 删除流程里没有任何 context.delete，build-4/6/7 的闪退从写法上不可能再发生。
+                if let name = viewModel.pendingDeleteName {
+                    viewModel.pendingDeleteName = nil
+                    viewModel.pendingDeletedNames.insert(name)
+                    Task { await viewModel.deleteAndRefresh(accountId: session.selectedAccount?.id ?? "", scriptName: name, context: modelContext) }
                 }
-            }) {
-                if let name = deleteName {
-                    WorkerDeleteConfirmView(scriptName: name, viewModel: viewModel, accountId: session.selectedAccount?.id ?? "")
-                }
+            }) { target in
+                WorkerDeleteConfirmView(scriptName: target.id, viewModel: viewModel, accountId: session.selectedAccount?.id ?? "")
             }
             .sensoryFeedback(.success, trigger: uploadViewModel.didUpload)
             .sensoryFeedback(.success, trigger: viewModel.didDelete)
@@ -134,6 +142,11 @@ struct WorkerListView: View {
                 Button("好", role: .cancel) {}
             } message: {
                 Text("当前授权未包含 Workers 写权限（workers-scripts.write）。\n请在设置中退出登录后重新授权以启用此功能。")
+            }
+            .alert("删除失败", isPresented: Binding(get: { viewModel.deleteError != nil }, set: { if !$0 { viewModel.deleteError = nil } })) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(viewModel.deleteError ?? "删除失败，Worker 未删除。")
             }
         }
     }
@@ -162,7 +175,7 @@ struct WorkerListView: View {
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            if canWrite { deleteName = script.id; showDelete = true } else { deleteDenied = true }
+                            if canWrite { deleteTarget = WorkerDeleteTarget(id: script.id) } else { deleteDenied = true }
                         } label: {
                             Label("删除", systemImage: "trash")
                         }
