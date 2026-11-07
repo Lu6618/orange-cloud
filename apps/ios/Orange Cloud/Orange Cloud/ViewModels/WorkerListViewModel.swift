@@ -43,22 +43,29 @@ final class WorkerListViewModel {
         await task.value
     }
 
-    /// 删除 Worker 脚本，成功后从缓存移除该条目（@Query 列表随之更新）。需 workers-scripts.write。
-    func delete(accountId: String, script: CachedWorkerScript, context: ModelContext) async -> Bool {
+    /// 删除 Worker 脚本分两步：先调服务端删除，再由确认页在 sheet 关闭后清缓存。
+    /// 不能在 sheet 仍持有 script 对象时 context.delete + save：关闭动画中 sheet 重绘会
+    /// 访问已删除的 SwiftData 对象（CoreData 无法补全 fault）导致闪退，2026-11-07 实测。
+    /// 需 workers-scripts.write。
+    func deleteFromServer(accountId: String, scriptName: String) async -> Bool {
         guard !isDeleting else { return false }
         isDeleting = true
         error = nil
         defer { isDeleting = false }
         do {
-            try await workerService.deleteScript(accountId: accountId, scriptName: script.id)
-            context.delete(script)
-            try? context.save()
-            didDelete.toggle()
+            try await workerService.deleteScript(accountId: accountId, scriptName: scriptName)
             return true
         } catch {
             self.error = error.localizedDescription
             return false
         }
+    }
+
+    /// 服务端删除成功、sheet 已关闭后，再从 SwiftData 缓存移除该条目（@Query 列表随之更新）。
+    func removeFromCache(script: CachedWorkerScript, context: ModelContext) {
+        context.delete(script)
+        try? context.save()
+        didDelete.toggle()
     }
 
     private func load(accountId: String, context: ModelContext) async {
