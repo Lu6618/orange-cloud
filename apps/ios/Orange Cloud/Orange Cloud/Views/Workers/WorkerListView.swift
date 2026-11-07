@@ -101,7 +101,15 @@ struct WorkerListView: View {
                     Task { await refresh() }
                 }
             }
-            .sheet(item: $deleteTarget) { script in
+            .sheet(item: $deleteTarget, onDismiss: {
+                // sheet 完全关闭后再清缓存（见 WorkerDeleteConfirmView.performDelete）：
+                // 关闭动画中 sheet 仍持有 script 对象，此时 context.delete 会让重绘访问
+                // 已删对象导致闪退；onDismiss 在关闭完成后才触发，不用猜等待时长。
+                if let script = viewModel.pendingDelete {
+                    viewModel.pendingDelete = nil
+                    viewModel.removeFromCache(script: script, context: modelContext)
+                }
+            }) { script in
                 WorkerDeleteConfirmView(script: script, viewModel: viewModel, accountId: script.accountId)
             }
             .sensoryFeedback(.success, trigger: uploadViewModel.didUpload)
