@@ -16,7 +16,7 @@ actor FileProviderIdentifierStore {
 
     static let filePrefix = "F-"
     static let folderPrefix = "D-"
-    private static let appGroup = "group.jiamin.chen.Orange-Cloud"
+    private static let appGroup = "group.KTUXULV5G6.orange-cloud"
 
     private let fileURL: URL
     private var files: [String: String] = [:]      // id -> key
