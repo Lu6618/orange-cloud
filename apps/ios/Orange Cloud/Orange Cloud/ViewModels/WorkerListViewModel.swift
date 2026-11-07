@@ -17,8 +17,8 @@ final class WorkerListViewModel {
     var error: String?
     var isDeleting = false
     var didDelete = false       // sensoryFeedback 触发器
-    /// 服务端已删、等 sheet 完全关闭后再清缓存的脚本（见 WorkerDeleteConfirmView）。
-    var pendingDelete: CachedWorkerScript?
+    /// 服务端删除成功后，列表需在 sheet 关闭后刷新对账（见 WorkerListView onDismiss）。
+    var needsRefreshAfterDelete = false
 
     private let workerService: WorkerService
     /// 进行中的加载任务（见 ZoneListViewModel：独立 Task 承载加载，避免下拉手势取消导致 .cancelled 误报）
@@ -45,10 +45,10 @@ final class WorkerListViewModel {
         await task.value
     }
 
-    /// 删除 Worker 脚本分两步：先调服务端删除，缓存清理由列表在 sheet 的 onDismiss 里做。
-    /// 不能在 sheet 仍持有 script 对象时 context.delete + save：关闭动画中 sheet 重绘会
-    /// 访问已删除的 SwiftData 对象（CoreData 无法补全 fault）导致闪退，2026-11-07 实测；
-    /// build-6 先关 sheet 再等 350ms 仍不够，改用 onDismiss 才彻底。
+    /// 删除 Worker 脚本（只调服务端，不动缓存）。缓存由列表刷新对账：
+    /// syncWorkers 会删掉远端已不存在的条目，且刷新时确认页早已关闭。
+    /// 删除流程里不做 context.delete——build-4/6/7 的闪退都是关闭动画中重绘访问
+    /// 已删 SwiftData 对象所致，2026-11-07 实测三版皆崩，改由刷新对账才彻底。
     /// 需 workers-scripts.write。
     func deleteFromServer(accountId: String, scriptName: String) async -> Bool {
         guard !isDeleting else { return false }
@@ -62,13 +62,6 @@ final class WorkerListViewModel {
             self.error = error.localizedDescription
             return false
         }
-    }
-
-    /// 服务端删除成功、sheet 已关闭后（列表 onDismiss 调用），再从 SwiftData 缓存移除该条目（@Query 列表随之更新）。
-    func removeFromCache(script: CachedWorkerScript, context: ModelContext) {
-        context.delete(script)
-        try? context.save()
-        didDelete.toggle()
     }
 
     private func load(accountId: String, context: ModelContext) async {
