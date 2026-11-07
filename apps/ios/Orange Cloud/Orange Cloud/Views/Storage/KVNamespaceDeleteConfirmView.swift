@@ -2,7 +2,8 @@
 //  KVNamespaceDeleteConfirmView.swift
 //  Orange Cloud
 //
-//  KV 命名空间删除二次确认（Sheet）：必须原样输入名称才能启用删除。
+//  KV 命名空间删除二次确认（Sheet）：名称自动填入，核对后点删除即可
+//  （原为手动输入确认，2026-11-07 按 Lu 要求改自动填入）。
 //  入口（StorageView 滑动删除）已按 workers-kv-storage.write 门控。
 //  删除连同命名空间内全部键值，不可恢复。
 //
@@ -56,9 +57,9 @@ struct KVNamespaceDeleteConfirmView: View {
                         .submitLabel(.done)
                         .onSubmit { Task { await performDelete() } }
                 } header: {
-                    Text("输入命名空间名称以确认")
+                    Text("确认命名空间名称")
                 } footer: {
-                    Text("请输入 \(namespace.title) 以启用删除。")
+                    Text("名称已自动填入，核对无误后点下方删除。")
                 }
 
                 if let error = viewModel.error {
@@ -94,7 +95,7 @@ struct KVNamespaceDeleteConfirmView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear { fieldFocused = true }
+            .onAppear { typedName = namespace.title }
             .interactiveDismissDisabled(viewModel.isDeleting)
         }
     }
