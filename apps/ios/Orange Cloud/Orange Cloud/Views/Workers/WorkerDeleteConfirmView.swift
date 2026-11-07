@@ -6,6 +6,8 @@
 //  （原为手动输入确认，2026-11-07 按 Lu 要求改自动填入；注意：打开即满足删除条件，
 //  误删风险高于手动输入版）。入口（WorkerListView 滑动删除）已按
 //  workers-scripts.write 门控。删除连同其部署与路由绑定，不可恢复。
+//  本页只传脚本名（String），不持有 CachedWorkerScript 对象；缓存由列表刷新对账，
+//  删除流程里没有任何 context.delete（build-4/6/7 的闪退根因从写法上已排除）。
 //
 
 import SwiftUI
@@ -13,18 +15,17 @@ import SwiftData
 
 struct WorkerDeleteConfirmView: View {
 
-    let script: CachedWorkerScript
+    let scriptName: String
     let viewModel: WorkerListViewModel
     let accountId: String
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
     @State private var typedName = ""
     @FocusState private var fieldFocused: Bool
 
     /// 输入与脚本名完全一致（去空白）才允许删除
     private var nameMatches: Bool {
-        typedName.trimmingCharacters(in: .whitespacesAndNewlines) == script.id
+        typedName.trimmingCharacters(in: .whitespacesAndNewlines) == scriptName
     }
 
     private var canDelete: Bool {
@@ -42,7 +43,7 @@ struct WorkerDeleteConfirmView: View {
                             .foregroundStyle(.red)
                         Text("永久删除 Worker")
                             .font(.headline)
-                        Text("此操作将永久删除 Worker \(script.id) 及其部署与路由绑定，无法撤销，也无法恢复。")
+                        Text("此操作将永久删除 Worker \(scriptName) 及其部署与路由绑定，无法撤销，也无法恢复。")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -53,7 +54,7 @@ struct WorkerDeleteConfirmView: View {
                 }
 
                 Section {
-                    TextField(script.id, text: $typedName)
+                    TextField(scriptName, text: $typedName)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
@@ -99,7 +100,7 @@ struct WorkerDeleteConfirmView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear { typedName = script.id }
+            .onAppear { typedName = scriptName }
             .interactiveDismissDisabled(viewModel.isDeleting)
         }
     }
@@ -107,12 +108,14 @@ struct WorkerDeleteConfirmView: View {
     private func performDelete() async {
         guard canDelete else { return }
         fieldFocused = false
-        // 先调服务端删除；成功后记下待清缓存的脚本并关 sheet，缓存清理由列表在
-        // sheet 完全关闭后的 onDismiss 里做——关闭动画中 sheet 仍持有 script 对象，
-        // 此时清缓存会让重绘访问已删对象导致闪退；build-6 的 350ms 等待仍不够，改用 onDismiss。
+        // 本页只拿脚本名（String），不持有 SwiftData 对象；服务端删除成功后直接关 sheet，
+        // 缓存由列表在 onDismiss 里刷新对账（syncWorkers 会删掉远端已不存在的条目）——
+        // 删除流程里没有任何 context.delete，确认页、列表都不可能读到已删对象，
+        // build-4/6/7 的闪退根因（关闭动画中重绘访问已删对象）从写法上就不可能再发生。
         // 服务端删除失败时留在本页显示错误，不关 sheet。
-        guard await viewModel.deleteFromServer(accountId: accountId, scriptName: script.id) else { return }
-        viewModel.pendingDelete = script
+        guard await viewModel.deleteFromServer(accountId: accountId, scriptName: scriptName) else { return }
+        viewModel.didDelete.toggle()
+        viewModel.needsRefreshAfterDelete = true
         dismiss()
     }
 }
