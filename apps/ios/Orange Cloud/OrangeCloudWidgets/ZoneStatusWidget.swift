@@ -85,6 +85,36 @@ struct ZoneStatusWidget: Widget {
     }
 }
 
+/// 诊断版空态：把 Widget 进程内能读到的状态直接印在卡片上，
+/// 用于定位「App 有数据、Widget 空」到底卡在哪一环。
+/// （临时诊断，定位后恢复为 WidgetEmptyHint）
+private struct WidgetDiagnosticHint: View {
+    var body: some View {
+        let groupOK = UserDefaults(suiteName: WidgetSnapshot.appGroupID) != nil
+        let zones = WidgetDataStore.loadZones().count
+        let snap = WidgetSnapshot.load() != nil
+        let acct = WidgetSnapshot.currentAccountId() ?? "-"
+        let shortAcct = acct.count > 8 ? String(acct.prefix(8)) : acct
+        let token = SharedAuth.currentValidAccessToken() != nil
+        VStack(spacing: 4) {
+            Image(systemName: "cloud")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text("打开 App 同步数据")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Group:\(groupOK ? "OK" : "NIL") Snap:\(snap ? "Y" : "N") Zones:\(zones)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Acct:\(shortAcct) Token:\(token ? "Y" : "N")")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 struct AccountOverviewWidgetView: View {
 
     @Environment(\.widgetFamily) private var family
@@ -108,7 +138,7 @@ struct AccountOverviewWidgetView: View {
             default:            smallView(snapshot)
             }
         } else {
-            WidgetEmptyHint(text: String(localized: "打开 App 同步数据"))
+            WidgetDiagnosticHint()
         }
     }
 
